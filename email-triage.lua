@@ -1263,7 +1263,8 @@ local function fetchEmails()
     if status and output then
         output = output:gsub("^[^{]*", "")
         local ok, data = pcall(hs.json.decode, output)
-        if ok and data and data.emails and #data.emails > 0 then
+        -- Only use cache if total > 0 and emails exist (prevents stale cache)
+        if ok and data and data.emails and #data.emails > 0 and (data.total or 0) > 0 then
             state.emails = data.emails
             cache.emails = data.emails
             sortEmailsByDate(state.emails)
