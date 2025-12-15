@@ -1278,20 +1278,49 @@ local function fetchEmails()
                 if exitCode == 0 then
                     local out = stdOut:gsub("^[^{]*", "")
                     local ok2, data2 = pcall(hs.json.decode, out)
-                    if ok2 and data2 and data2.success and data2.emails then
-                        -- Merge new emails, keeping existing
-                        local existingIds = {}
-                        for _, e in ipairs(state.emails) do existingIds[e.id] = true end
-                        for _, e in ipairs(data2.emails) do
-                            if not existingIds[e.id] then
-                                table.insert(state.emails, e)
-                                table.insert(cache.emails, e)
+                    if ok2 and data2 and data2.success then
+                        -- Replace with actual inbox state (not merge)
+                        -- This ensures stale cached emails are removed
+                        local freshEmails = data2.emails or {}
+                        local freshTotal = data2.total or 0
+
+                        -- Build set of IDs that are actually in inbox
+                        local freshIds = {}
+                        for _, e in ipairs(freshEmails) do
+                            freshIds[e.id] = true
+                        end
+
+                        -- Filter state.emails to only keep what's still in inbox
+                        local filteredEmails = {}
+                        for _, e in ipairs(state.emails) do
+                            if freshIds[e.id] then
+                                table.insert(filteredEmails, e)
                             end
                         end
+
+                        -- Add any new emails from fresh fetch
+                        local existingIds = {}
+                        for _, e in ipairs(filteredEmails) do
+                            existingIds[e.id] = true
+                        end
+                        for _, e in ipairs(freshEmails) do
+                            if not existingIds[e.id] then
+                                table.insert(filteredEmails, e)
+                            end
+                        end
+
+                        state.emails = filteredEmails
+                        cache.emails = filteredEmails
                         sortEmailsByDate(state.emails)
                         sortEmailsByDate(cache.emails)
-                        state.total = data2.total or #state.emails
-                        cache.total = state.total
+                        state.total = freshTotal
+                        cache.total = freshTotal
+
+                        -- Adjust index if needed
+                        if state.currentIndex > #state.emails then
+                            state.currentIndex = math.max(1, #state.emails)
+                        end
+
                         render()
                         saveCacheToDisk()
                     end
