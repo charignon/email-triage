@@ -1030,7 +1030,7 @@ render = function()
     }
     elementIndex = elementIndex + 1
 
-    local shortcuts = "e Archive   t Task   x Delete   s Suppress   l Labels   ← Undo   ↑↓ Scroll   Esc Close"
+    local shortcuts = "e Archive   t Task   x Delete   s Suppress   l Labels   ← Undo   r Refresh   Esc Close"
     state.canvas[elementIndex] = {
         type = "text",
         text = hs.styledtext.new(shortcuts, {
@@ -1571,6 +1571,41 @@ local function handleKeyPress(event)
     -- Left arrow or backspace - Undo last action
     if keyCode == 123 or keyCode == 51 then
         performUndo()
+        return true
+    end
+
+    -- r - Refresh (clear cache and reload from server)
+    if keyCode == 15 then
+        -- Clear cache
+        state.emails = {}
+        cache.emails = {}
+        cache.total = 0
+        state.total = 0
+        state.currentIndex = 1
+        -- Clear disk cache
+        hs.execute("echo '{\"total\": 0, \"emails\": []}' > ~/.email-triage-cache.json")
+        -- Show loading and fetch fresh
+        state.isLoading = true
+        render()
+        -- Fetch fresh from server
+        local task = hs.task.new(HELPER_PATH, function(exitCode, stdOut, stdErr)
+            state.isLoading = false
+            if exitCode == 0 then
+                local out = stdOut:gsub("^[^{]*", "")
+                local ok, data = pcall(hs.json.decode, out)
+                if ok and data and data.success then
+                    state.emails = data.emails or {}
+                    cache.emails = state.emails
+                    state.total = data.total or 0
+                    cache.total = state.total
+                    sortEmailsByDate(state.emails)
+                    state.currentIndex = 1
+                    saveCacheToDisk()
+                end
+            end
+            render()
+        end, {"fetch", "--max", tostring(MAX_EMAILS)})
+        task:start()
         return true
     end
 
